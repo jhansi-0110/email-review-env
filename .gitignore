@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+outputs/evals/
+outputs/logs/
+*.log
+.DS_Store
+deploy_all.py
+deploy_log.txt
