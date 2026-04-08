@@ -1,3 +1,12 @@
+---
+title: Email Review Envw Env
+emoji: 💻
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_file: server/app.py
+pinned: false
+---
 # Email Review Environment 📧
 
 A real-world **customer support email triage** environment built on the [OpenEnv](https://github.com/meta-pytorch/OpenEnv) framework.
