@@ -2,8 +2,9 @@ import sys, os, threading
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 from models import EmailAction, EmailObservation
 from server.environment import EmailReviewEnvironment, TASKS, grade_action
@@ -32,23 +33,38 @@ def health():
 
 @app.get("/tasks")
 def list_tasks():
-    """Return all tasks with grader info — required by OpenEnv spec."""
+    """
+    Return all 3 tasks with grader info.
+    Format matches OpenEnv validator expectations.
+    """
     return {
         "tasks": [
             {
                 "id":          t["id"],
+                "name":        t["id"].replace("_", " ").title(),
                 "difficulty":  t["difficulty"],
                 "description": t["task_description"],
-                "grader":      "deterministic",
-                "score_range": [0.0, 1.0],
+                "has_grader":  True,
+                "grader_type": "deterministic",
+                "score_range": {"min": 0.0, "max": 1.0},
                 "action_space": {
                     "category":    ["billing", "technical", "general", "complaint"],
                     "priority":    ["low", "medium", "high", "urgent"],
-                    "reply_draft": "string (min 40 words)",
+                    "reply_draft": "str",
+                },
+                "observation_space": {
+                    "email_subject": "str",
+                    "email_body":    "str",
+                    "sender_name":   "str",
+                    "last_score":    "float",
+                    "done":          "bool",
+                    "reward":        "float",
                 },
             }
             for t in TASKS
-        ]
+        ],
+        "total": len(TASKS),
+        "graders_available": len(TASKS),
     }
 
 
@@ -59,19 +75,14 @@ def reset(req: Optional[ResetRequest] = None):
 
     with _lock:
         env = EmailReviewEnvironment()
-        # If a specific task_id is requested, start from that task
-        if task_id:
-            for i, t in enumerate(TASKS):
-                if t["id"] == task_id:
-                    env._task_index = i
-                    break
         _sessions[sid] = env
 
-    obs = env.reset_to_current()
+    obs = env.reset(task_id=task_id)
     return {
         "observation": obs.model_dump(),
         "reward":      0.0,
         "done":        False,
+        "task_id":     task_id,
     }
 
 
@@ -81,7 +92,7 @@ def step(req: StepRequest):
     with _lock:
         if sid not in _sessions:
             env = EmailReviewEnvironment()
-            env.reset_to_current()
+            env.reset()
             _sessions[sid] = env
         env = _sessions[sid]
 
@@ -96,6 +107,7 @@ def step(req: StepRequest):
         "observation": obs.model_dump(),
         "reward":      float(obs.reward),
         "done":        done,
+        "info":        {"score": float(obs.reward), "task_completed": done},
     }
 
 
@@ -104,30 +116,32 @@ def state(session_id: str = DEFAULT):
     with _lock:
         if session_id not in _sessions:
             env = EmailReviewEnvironment()
-            env.reset_to_current()
+            env.reset()
             _sessions[session_id] = env
         env = _sessions[session_id]
     s = env.state
-    return {"episode_id": s.episode_id, "step_count": s.step_count}
+    return {
+        "episode_id": s.episode_id,
+        "step_count": s.step_count,
+    }
 
 
 @app.post("/grade")
-def grade(req: StepRequest):
-    """Direct grader endpoint — grade an action for a specific task."""
-    sid = req.session_id or DEFAULT
-    with _lock:
-        if sid not in _sessions:
-            env = EmailReviewEnvironment()
-            env.reset_to_current()
-            _sessions[sid] = env
-        env = _sessions[sid]
+def grade(task_id: str, req: StepRequest):
+    """Direct grade endpoint — grade an action for a specific task without state."""
+    task = None
+    for t in TASKS:
+        if t["id"] == task_id:
+            task = t
+            break
+    if task is None:
+        return JSONResponse(status_code=404, content={"error": "Task not found"})
 
-    idx = min(env._task_index, len(TASKS) - 1)
-    task = TASKS[idx]
     score, breakdown = grade_action(task, req.action)
     return {
-        "task_id":   task["id"],
+        "task_id":   task_id,
         "score":     score,
+        "reward":    score,
         "breakdown": breakdown,
         "done":      True,
     }

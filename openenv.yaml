@@ -1,32 +1,58 @@
 name: email_review_env
 version: "1.0.0"
 description: >
-  A real-world customer support email triage environment.
+  Real-world customer support email triage environment.
   An AI agent learns to categorize, prioritize, and draft replies
-  to customer support emails with increasing difficulty.
-  Tasks range from simple billing queries (Easy) to complex
-  multi-issue emails involving angry premium subscribers (Hard).
+  to customer support emails. 3 tasks with deterministic graders.
 
 author: JhansiY1
 license: MIT
 
+tasks:
+  - id: task_1_easy
+    name: Billing Double Charge
+    difficulty: easy
+    description: "Simple billing double-charge complaint. Category=billing, Priority=high."
+    has_grader: true
+    grader_type: deterministic
+    score_range: [0.0, 1.0]
+
+  - id: task_2_medium
+    name: Angry Premium Subscriber
+    difficulty: medium
+    description: "Angry premium subscriber with service outage. Category=complaint, Priority=urgent."
+    has_grader: true
+    grader_type: deterministic
+    score_range: [0.0, 1.0]
+
+  - id: task_3_hard
+    name: API Auth Plus Billing Tier
+    difficulty: hard
+    description: "Dual-issue: API 401 + wrong billing tier. Category=technical, Priority=urgent."
+    has_grader: true
+    grader_type: deterministic
+    score_range: [0.0, 1.0]
+
 environment:
   type: text
-  tasks:
-    - id: task_1_easy
-      difficulty: easy
-      description: "Simple billing double-charge complaint"
-    - id: task_2_medium
-      difficulty: medium
-      description: "Angry premium subscriber with service outage"
-    - id: task_3_hard
-      difficulty: hard
-      description: "Complex dual-issue: API auth failure + wrong billing tier"
+  action_space:
+    category: [billing, technical, general, complaint]
+    priority: [low, medium, high, urgent]
+    reply_draft: str
+  observation_space:
+    email_subject: str
+    email_body: str
+    sender_name: str
+    last_score: float
+    done: bool
+    reward: float
 
 api:
   reset: true
   step: true
   state: true
+  tasks: true
+  grade: true
 
 scoring:
   min: 0.0

@@ -114,41 +114,38 @@ def grade_action(task, action):
 
 
 class EmailReviewEnvironment:
-
     def __init__(self):
         self._episode_id = str(uuid4())
         self._step_count = 0
         self._task_index = 0
         self._scores = []
+        # single_task_mode: when True, done=True after ONE step (for per-task grading)
+        self._single_task_mode = False
+        self._single_task_id = None
         self.state = SimpleState(self._episode_id, 0)
 
-    def reset(self):
-        self._episode_id = str(uuid4())
-        self._step_count = 0
-        self._task_index = 0
-        self._scores = []
-        self.state = SimpleState(self._episode_id, 0)
-        t = TASKS[0]
-        return EmailObservation(
-            email_subject=t["email_subject"],
-            email_body=t["email_body"],
-            sender_name=t["sender_name"],
-            task_description=t["task_description"],
-            last_score=0.0,
-            score_breakdown="",
-            task_completed=False,
-            done=False,
-            reward=0.0,
-        )
-
-    def reset_to_current(self):
-        """Reset episode but keep task_index (for task-specific evaluation)."""
+    def reset(self, task_id=None):
         self._episode_id = str(uuid4())
         self._step_count = 0
         self._scores = []
         self.state = SimpleState(self._episode_id, 0)
-        idx = min(self._task_index, len(TASKS) - 1)
-        t = TASKS[idx]
+
+        if task_id:
+            # Single-task mode: validator is grading one specific task
+            self._single_task_mode = True
+            self._single_task_id = task_id
+            self._task_index = 0
+            for i, t in enumerate(TASKS):
+                if t["id"] == task_id:
+                    self._task_index = i
+                    break
+        else:
+            # Full episode mode: run all 3 tasks
+            self._single_task_mode = False
+            self._single_task_id = None
+            self._task_index = 0
+
+        t = TASKS[self._task_index]
         return EmailObservation(
             email_subject=t["email_subject"],
             email_body=t["email_body"],
@@ -182,8 +179,23 @@ class EmailReviewEnvironment:
         score, breakdown = grade_action(t, action)
         self._scores.append(score)
         self._task_index += 1
-        finished = (self._task_index >= len(TASKS))
 
+        # In single-task mode: always done=True after first step
+        if self._single_task_mode:
+            return EmailObservation(
+                email_subject="Task complete",
+                email_body="Task " + t["id"] + " graded. Score: " + str(score),
+                sender_name="System",
+                task_description="Single task complete.",
+                last_score=score,
+                score_breakdown=breakdown,
+                task_completed=True,
+                done=True,
+                reward=score,
+            )
+
+        # Full episode mode: done only after all 3 tasks
+        finished = (self._task_index >= len(TASKS))
         if finished:
             avg = round(sum(self._scores) / len(self._scores), 3)
             return EmailObservation(
