@@ -77,30 +77,24 @@ def grade_action(task, action):
     notes = []
     rl = action.reply_draft.lower()
 
-    cat_correct = task["correct_category"]
-    pri_correct = task["correct_priority"]
-    keywords    = task["required_keywords"]
-    forbidden   = task["forbidden_phrases"]
-    min_len     = task["min_reply_length"]
-
-    if action.category.lower().strip() == cat_correct:
+    if action.category.lower().strip() == task["correct_category"]:
         score += 0.25
         notes.append("OK Category correct " + action.category + ": +0.25")
     else:
-        notes.append("WRONG Category got " + action.category + " expected " + cat_correct)
+        notes.append("WRONG Category got " + action.category + " expected " + task["correct_category"])
 
-    if action.priority.lower().strip() == pri_correct:
+    if action.priority.lower().strip() == task["correct_priority"]:
         score += 0.25
         notes.append("OK Priority correct " + action.priority + ": +0.25")
     else:
-        notes.append("WRONG Priority got " + action.priority + " expected " + pri_correct)
+        notes.append("WRONG Priority got " + action.priority + " expected " + task["correct_priority"])
 
-    found = [kw for kw in keywords if kw.lower() in rl]
-    kws = round(len(found) / max(len(keywords), 1) * 0.30, 3)
+    found = [kw for kw in task["required_keywords"] if kw.lower() in rl]
+    kws = round(len(found) / max(len(task["required_keywords"]), 1) * 0.30, 3)
     score += kws
-    notes.append("Keywords " + str(len(found)) + "/" + str(len(keywords)) + " " + str(found) + ": +" + str(kws))
+    notes.append("Keywords " + str(len(found)) + "/" + str(len(task["required_keywords"])) + ": +" + str(kws))
 
-    bad = [fp for fp in forbidden if fp.lower() in rl]
+    bad = [fp for fp in task["forbidden_phrases"] if fp.lower() in rl]
     if not bad:
         score += 0.10
         notes.append("OK No forbidden phrases: +0.10")
@@ -108,11 +102,11 @@ def grade_action(task, action):
         notes.append("WRONG Forbidden: " + str(bad))
 
     wc = len(action.reply_draft.split())
-    if wc >= min_len:
+    if wc >= task["min_reply_length"]:
         score += 0.10
         notes.append("OK Length " + str(wc) + " words: +0.10")
     else:
-        notes.append("WRONG Too short " + str(wc) + "/" + str(min_len))
+        notes.append("WRONG Too short " + str(wc) + "/" + str(task["min_reply_length"]))
 
     score = round(min(score, 1.0), 3)
     breakdown = "\n".join(notes) + "\nFINAL SCORE: " + str(score)
@@ -120,6 +114,7 @@ def grade_action(task, action):
 
 
 class EmailReviewEnvironment:
+
     def __init__(self):
         self._episode_id = str(uuid4())
         self._step_count = 0
@@ -134,6 +129,26 @@ class EmailReviewEnvironment:
         self._scores = []
         self.state = SimpleState(self._episode_id, 0)
         t = TASKS[0]
+        return EmailObservation(
+            email_subject=t["email_subject"],
+            email_body=t["email_body"],
+            sender_name=t["sender_name"],
+            task_description=t["task_description"],
+            last_score=0.0,
+            score_breakdown="",
+            task_completed=False,
+            done=False,
+            reward=0.0,
+        )
+
+    def reset_to_current(self):
+        """Reset episode but keep task_index (for task-specific evaluation)."""
+        self._episode_id = str(uuid4())
+        self._step_count = 0
+        self._scores = []
+        self.state = SimpleState(self._episode_id, 0)
+        idx = min(self._task_index, len(TASKS) - 1)
+        t = TASKS[idx]
         return EmailObservation(
             email_subject=t["email_subject"],
             email_body=t["email_body"],
